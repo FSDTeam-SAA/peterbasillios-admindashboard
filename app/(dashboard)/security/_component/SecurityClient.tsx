@@ -1,8 +1,11 @@
 "use client"
 
 import { useState } from "react"
+import { useMutation } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import { Camera, Check, Eye, EyeOff, X } from "lucide-react"
+import { useSession } from "next-auth/react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -52,6 +55,64 @@ const passwordRuleDefinitions = [
     test: (password: string) => password.length > 0 && !/\s/.test(password),
   },
 ]
+
+interface ChangePasswordResponse {
+  statusCode?: number
+  success?: boolean
+  status?: boolean
+  message?: string
+}
+
+function getApiBaseUrl() {
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+
+  if (!baseUrl) {
+    throw new Error("API base URL is not configured.")
+  }
+
+  return baseUrl.replace(/\/+$/, "")
+}
+
+async function changePassword({
+  accessToken,
+  oldPassword,
+  newPassword,
+}: {
+  accessToken: string
+  oldPassword: string
+  newPassword: string
+}) {
+  const response = await fetch(`${getApiBaseUrl()}/auth/change-password`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      oldPassword,
+      newPassword,
+    }),
+    cache: "no-store",
+  })
+
+  const payload: ChangePasswordResponse | null = await response
+    .json()
+    .catch(() => null)
+  const hasExplicitFailure =
+    payload?.success === false || payload?.status === false
+
+  if (!response.ok || hasExplicitFailure) {
+    throw new Error(
+      payload?.message?.trim() ||
+        "Password could not be changed. Please try again.",
+    )
+  }
+
+  return {
+    message: payload?.message?.trim() || "Password changed successfully.",
+  }
+}
 
 export function SecurityClient() {
   return (
@@ -198,6 +259,33 @@ function PasswordChangePanel() {
     new: false,
     confirm: false,
   })
+  const { data: session } = useSession()
+  const accessToken = session?.accessToken
+
+  const changePasswordMutation = useMutation({
+    mutationFn: () => {
+      if (!accessToken) {
+        throw new Error("Your session token was not found. Please log in again.")
+      }
+
+      return changePassword({
+        accessToken,
+        oldPassword: currentPassword,
+        newPassword,
+      })
+    },
+    onSuccess: (result) => {
+      toast.success(result.message)
+      resetPasswordForm()
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Password could not be changed. Please try again.",
+      )
+    },
+  })
 
   const toggleVisibility = (field: string) => {
     setVisible((current) => ({ ...current, [field]: !current[field] }))
@@ -230,6 +318,7 @@ function PasswordChangePanel() {
     confirmPassword.length > 0 &&
     isPasswordValid &&
     confirmPassword === newPassword
+  const isSaving = changePasswordMutation.isPending
 
   const resetPasswordForm = () => {
     setCurrentPassword("")
@@ -251,8 +340,8 @@ function PasswordChangePanel() {
         setTouched({ current: true, new: true, confirm: true })
         setShowPasswordRules(true)
 
-        if (canSave) {
-          resetPasswordForm()
+        if (canSave && !isSaving) {
+          changePasswordMutation.mutate()
         }
       }}
       className="rounded bg-[#E6F1F0] p-5"
@@ -269,6 +358,7 @@ function PasswordChangePanel() {
           invalid={isCurrentInvalid}
           visible={Boolean(visible.current)}
           onToggle={() => toggleVisibility("current")}
+          disabled={isSaving}
         />
         {isCurrentInvalid && (
           <p className="mt-2 text-base text-[#FF1B2D] md:hidden">
@@ -288,6 +378,7 @@ function PasswordChangePanel() {
           invalid={isNewInvalid}
           visible={Boolean(visible.new)}
           onToggle={() => toggleVisibility("new")}
+          disabled={isSaving}
         />
       </div>
       {(isCurrentInvalid || isNewInvalid) && (
@@ -321,6 +412,7 @@ function PasswordChangePanel() {
         visible={Boolean(visible.confirm)}
         onToggle={() => toggleVisibility("confirm")}
         className="mt-5"
+        disabled={isSaving}
       />
       {isConfirmInvalid && (
         <p className="mt-2 text-base text-[#FF1B2D]">
@@ -358,7 +450,12 @@ function PasswordChangePanel() {
         </motion.ul>
       )}
 
-      <FormActions onCancel={resetPasswordForm} saveDisabled={!canSave} />
+      <FormActions
+        onCancel={resetPasswordForm}
+        saveDisabled={!canSave || isSaving}
+        cancelDisabled={isSaving}
+        saveLabel={isSaving ? "Saving..." : "Save"}
+      />
     </motion.form>
   )
 }
@@ -394,6 +491,7 @@ function PasswordField({
   onBlur,
   visible,
   onToggle,
+  disabled,
   className,
 }: {
   id: string
@@ -405,6 +503,7 @@ function PasswordField({
   onBlur?: () => void
   visible: boolean
   onToggle: () => void
+  disabled?: boolean
   className?: string
 }) {
   const VisibilityIcon = visible ? EyeOff : Eye
@@ -422,6 +521,7 @@ function PasswordField({
           onChange={(event) => onChange(event.target.value)}
           onFocus={onFocus}
           onBlur={onBlur}
+          disabled={disabled}
           placeholder="********"
           className={`h-[52px] border-[#C3C3C3] pr-12 text-base text-[#7D7D7D] ${
             invalid ? "border-[#FF5C70] focus:border-[#FF5C70] focus:ring-[#FF5C70]/15" : ""
@@ -430,6 +530,7 @@ function PasswordField({
         <button
           type="button"
           onClick={onToggle}
+          disabled={disabled}
           className="absolute right-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center text-[#4A5A59]"
           aria-label={visible ? `Hide ${label}` : `Show ${label}`}
         >
@@ -443,9 +544,13 @@ function PasswordField({
 function FormActions({
   onCancel,
   saveDisabled,
+  cancelDisabled,
+  saveLabel = "Save",
 }: {
   onCancel?: () => void
   saveDisabled?: boolean
+  cancelDisabled?: boolean
+  saveLabel?: string
 }) {
   return (
     <div className="mt-8 flex justify-end gap-3">
@@ -453,6 +558,7 @@ function FormActions({
         type="button"
         variant="outline"
         onClick={onCancel}
+        disabled={cancelDisabled}
         className="h-[48px] min-w-[120px] border-[#007066] bg-transparent text-base font-medium text-[#007066] hover:bg-[#DCEFEB]"
       >
         Cancel
@@ -462,7 +568,7 @@ function FormActions({
         disabled={saveDisabled}
         className="h-[48px] min-w-[120px] bg-[#007066] text-base font-medium text-white hover:bg-[#006059] disabled:bg-[#7FAFAA]"
       >
-        Save
+        {saveLabel}
       </Button>
     </div>
   )

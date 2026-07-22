@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import { AlertCircle, PencilLine, Plus, Search, Trash2 } from "lucide-react"
+import { AlertCircle, Eye, PencilLine, Plus, Search, Trash2 } from "lucide-react"
 import { useSession } from "next-auth/react"
 import { toast } from "sonner"
 
@@ -26,21 +26,22 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { AddServiceModal } from "./AddServiceModal"
-import { EditServiceModal } from "./EditServiceModal"
-import { ServicesTableSkeleton } from "./ServicesTableSkeleton"
+import { AddProjectModal } from "./AddProjectModal"
+import { EditProjectModal } from "./EditProjectModal"
+import { GalleryTableSkeleton } from "./GalleryTableSkeleton"
+import { ProjectDetailsModal } from "./ProjectDetailsModal"
 
-interface ServiceApiItem {
+interface ProjectApiItem {
   _id: string
   name?: string
   description?: string
-  image?: string
+  image?: string[] | string
   status?: string
   createdAt?: string
   updatedAt?: string
 }
 
-interface ServicesApiResponse {
+interface ProjectsApiResponse {
   statusCode?: number
   success?: boolean
   status?: boolean
@@ -50,23 +51,23 @@ interface ServicesApiResponse {
     limit?: number
     total?: number
   }
-  data?: ServiceApiItem[]
+  data?: ProjectApiItem[]
 }
 
-interface ServiceDeleteResponse {
+interface ProjectDeleteResponse {
   statusCode?: number
   success?: boolean
   status?: boolean
   message?: string
 }
 
-interface ServiceItem {
+interface GalleryProject {
   id: string
   name: string
   description: string
+  images: number
   addedDate: string
   status: string
-  image?: string
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -99,30 +100,38 @@ function formatAddedDate(value?: string) {
   return dateFormatter.format(date)
 }
 
+function normalizeImageCount(image?: string[] | string) {
+  if (Array.isArray(image)) {
+    return image.length
+  }
+
+  return image ? 1 : 0
+}
+
 function normalizeStatus(status?: string) {
   if (!status?.trim()) {
-    return "Active"
+    return "Published"
   }
 
   return status.trim()
 }
 
-function normalizeServices(data?: ServiceApiItem[]): ServiceItem[] {
+function normalizeProjects(data?: ProjectApiItem[]): GalleryProject[] {
   if (!Array.isArray(data)) {
     return []
   }
 
-  return data.map((service) => ({
-    id: service._id,
-    name: service.name?.trim() || "Untitled service",
-    description: service.description?.trim() || "No description available.",
-    image: service.image,
-    addedDate: formatAddedDate(service.createdAt),
-    status: normalizeStatus(service.status),
+  return data.map((project) => ({
+    id: project._id,
+    name: project.name?.trim() || "Untitled project",
+    description: project.description?.trim() || "No description available.",
+    images: normalizeImageCount(project.image),
+    addedDate: formatAddedDate(project.createdAt),
+    status: normalizeStatus(project.status),
   }))
 }
 
-async function fetchServices(accessToken: string, searchTerm: string) {
+async function fetchProjects(accessToken: string, searchTerm: string) {
   const params = new URLSearchParams()
   const trimmedSearch = searchTerm.trim()
 
@@ -132,7 +141,7 @@ async function fetchServices(accessToken: string, searchTerm: string) {
 
   const queryString = params.toString()
   const response = await fetch(
-    `${getApiBaseUrl()}/service${queryString ? `?${queryString}` : ""}`,
+    `${getApiBaseUrl()}/project${queryString ? `?${queryString}` : ""}`,
     {
       method: "GET",
       headers: {
@@ -143,7 +152,7 @@ async function fetchServices(accessToken: string, searchTerm: string) {
     },
   )
 
-  const payload: ServicesApiResponse | null = await response
+  const payload: ProjectsApiResponse | null = await response
     .json()
     .catch(() => null)
   const hasExplicitFailure =
@@ -152,16 +161,16 @@ async function fetchServices(accessToken: string, searchTerm: string) {
   if (!response.ok || hasExplicitFailure) {
     throw new Error(
       payload?.message?.trim() ||
-        "Services could not be loaded. Please try again.",
+        "Projects could not be loaded. Please try again.",
     )
   }
 
-  return normalizeServices(payload?.data)
+  return normalizeProjects(payload?.data)
 }
 
-async function deleteService(accessToken: string, serviceId: string) {
+async function deleteProject(accessToken: string, projectId: string) {
   const response = await fetch(
-    `${getApiBaseUrl()}/service/${encodeURIComponent(serviceId)}`,
+    `${getApiBaseUrl()}/project/${encodeURIComponent(projectId)}`,
     {
       method: "DELETE",
       headers: {
@@ -172,7 +181,7 @@ async function deleteService(accessToken: string, serviceId: string) {
     },
   )
 
-  const payload: ServiceDeleteResponse | null = await response
+  const payload: ProjectDeleteResponse | null = await response
     .json()
     .catch(() => null)
   const hasExplicitFailure =
@@ -181,12 +190,12 @@ async function deleteService(accessToken: string, serviceId: string) {
   if (!response.ok || hasExplicitFailure) {
     throw new Error(
       payload?.message?.trim() ||
-        "Service could not be deleted. Please try again.",
+        "Project could not be deleted. Please try again.",
     )
   }
 
   return {
-    message: payload?.message?.trim() || "Service deleted successfully.",
+    message: payload?.message?.trim() || "Project deleted successfully.",
   }
 }
 
@@ -204,7 +213,7 @@ function useDebouncedValue(value: string, delay = 350) {
   return debouncedValue
 }
 
-function ServicesState({
+function GalleryState({
   title,
   description,
   action,
@@ -233,11 +242,16 @@ function ServicesState({
   )
 }
 
-export function ServicesClient() {
+export function GalleryClient() {
   const [search, setSearch] = useState("")
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [serviceToEdit, setServiceToEdit] = useState<ServiceItem | null>(null)
-  const [serviceToDelete, setServiceToDelete] = useState<ServiceItem | null>(
+  const [projectToView, setProjectToView] = useState<GalleryProject | null>(
+    null,
+  )
+  const [projectToEdit, setProjectToEdit] = useState<GalleryProject | null>(
+    null,
+  )
+  const [projectToDelete, setProjectToDelete] = useState<GalleryProject | null>(
     null,
   )
   const debouncedSearch = useDebouncedValue(search)
@@ -245,45 +259,45 @@ export function ServicesClient() {
   const { data: session, status } = useSession()
   const accessToken = session?.accessToken
 
-  const servicesQuery = useQuery({
-    queryKey: ["services", debouncedSearch],
-    queryFn: () => fetchServices(accessToken as string, debouncedSearch),
+  const projectsQuery = useQuery({
+    queryKey: ["projects", debouncedSearch],
+    queryFn: () => fetchProjects(accessToken as string, debouncedSearch),
     enabled: status === "authenticated" && Boolean(accessToken),
     retry: 1,
     staleTime: 60_000,
   })
 
-  const deleteServiceMutation = useMutation({
-    mutationFn: (serviceId: string) => {
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: string) => {
       if (!accessToken) {
         throw new Error("Your session token was not found. Please log in again.")
       }
 
-      return deleteService(accessToken, serviceId)
+      return deleteProject(accessToken, projectId)
     },
     onSuccess: async (result) => {
       toast.success(result.message)
-      setServiceToDelete(null)
-      await queryClient.invalidateQueries({ queryKey: ["services"] })
+      setProjectToDelete(null)
+      await queryClient.invalidateQueries({ queryKey: ["projects"] })
     },
     onError: (error) => {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Service could not be deleted. Please try again.",
+          : "Project could not be deleted. Please try again.",
       )
     },
   })
 
-  const services = useMemo(() => servicesQuery.data ?? [], [servicesQuery.data])
+  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
   const isTokenMissing = status === "authenticated" && !accessToken
-  const isServicesLoading =
+  const isProjectsLoading =
     status === "loading" ||
     (status === "authenticated" &&
       Boolean(accessToken) &&
-      (servicesQuery.isLoading || servicesQuery.isFetching))
+      (projectsQuery.isLoading || projectsQuery.isFetching))
   const trimmedSearch = debouncedSearch.trim()
-  const isDeletePending = deleteServiceMutation.isPending
+  const isDeletePending = deleteProjectMutation.isPending
 
   const closeDeleteModal = (open: boolean) => {
     if (isDeletePending) {
@@ -291,16 +305,16 @@ export function ServicesClient() {
     }
 
     if (!open) {
-      setServiceToDelete(null)
+      setProjectToDelete(null)
     }
   }
 
-  const confirmDeleteService = () => {
-    if (!serviceToDelete) {
+  const confirmDeleteProject = () => {
+    if (!projectToDelete) {
       return
     }
 
-    deleteServiceMutation.mutate(serviceToDelete.id)
+    deleteProjectMutation.mutate(projectToDelete.id)
   }
 
   return (
@@ -312,7 +326,7 @@ export function ServicesClient() {
         className="min-h-[calc(100vh-128px)] bg-[#F8FCFC] text-base text-[#7D7D7D]"
       >
         <div className="mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full max-w-[325px]">
+          <div className="relative w-full max-w-[490px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#6F807F]" />
             <Input
               value={search}
@@ -325,119 +339,119 @@ export function ServicesClient() {
           <Button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
-            className="h-[48px] min-w-[113px] rounded bg-[#007066] px-4 text-base font-medium text-[white] hover:bg-[#006059]"
+            className="h-[48px] min-w-[160px] rounded bg-[#007066] px-4 text-base font-medium text-white hover:bg-[#006059]"
           >
             <Plus className="size-4" />
-            Add Service
+            Add New Project
           </Button>
         </div>
 
-        {isServicesLoading ? (
-          <ServicesTableSkeleton />
+        {isProjectsLoading ? (
+          <GalleryTableSkeleton />
         ) : isTokenMissing ? (
-          <ServicesState
-            title="Services unavailable"
-            description="Your session token was not found. Please log in again to load services."
+          <GalleryState
+            title="Projects unavailable"
+            description="Your session token was not found. Please log in again to load projects."
           />
-        ) : servicesQuery.isError ? (
-          <ServicesState
-            title="Services unavailable"
+        ) : projectsQuery.isError ? (
+          <GalleryState
+            title="Projects unavailable"
             description={
-              servicesQuery.error instanceof Error
-                ? servicesQuery.error.message
-                : "Services could not be loaded. Please try again."
+              projectsQuery.error instanceof Error
+                ? projectsQuery.error.message
+                : "Projects could not be loaded. Please try again."
             }
             action={
               <Button
                 type="button"
-                onClick={() => servicesQuery.refetch()}
+                onClick={() => projectsQuery.refetch()}
                 className="h-11 rounded-lg bg-[#007066] px-6 text-base font-semibold text-white hover:bg-[#006059]"
               >
                 Try again
               </Button>
             }
           />
-        ) : services.length === 0 ? (
-          <ServicesState
-            title={trimmedSearch ? "No services found" : "No services yet"}
+        ) : projects.length === 0 ? (
+          <GalleryState
+            title={trimmedSearch ? "No projects found" : "No projects yet"}
             description={
               trimmedSearch
-                ? `No services matched "${trimmedSearch}".`
-                : "Services will appear here once they are added."
+                ? `No projects matched "${trimmedSearch}".`
+                : "Projects will appear here once they are added."
             }
           />
         ) : (
           <div className="overflow-hidden rounded-lg bg-[#E6F1F0]">
-            <Table className="min-w-[900px]">
+            <Table className="min-w-[1050px]">
               <TableHeader>
-                <TableRow className="h-[42px] hover:bg-transparent">
-                  <TableHead className="w-[235px] pl-[102px] text-base text-[#7D7D7D]">
-                    Name
+                <TableRow className="h-[60px] hover:bg-transparent">
+                  <TableHead className="w-[250px] text-center text-base text-[#7D7D7D]">
+                    Project Name
                   </TableHead>
-                  <TableHead className="w-[400px] text-center text-base text-[#7D7D7D]">
+                  <TableHead className="w-[385px] text-center text-base text-[#7D7D7D]">
                     Description
                   </TableHead>
-                  <TableHead className="w-[145px] text-center text-base text-[#7D7D7D]">
+                  <TableHead className="w-[120px] text-center text-base text-[#7D7D7D]">
+                    Images
+                  </TableHead>
+                  <TableHead className="w-[165px] text-center text-base text-[#7D7D7D]">
                     Added date
                   </TableHead>
-                  <TableHead className="w-[110px] text-center text-base text-[#7D7D7D]">
+                  <TableHead className="w-[130px] text-center text-base text-[#7D7D7D]">
                     Status
                   </TableHead>
-                  <TableHead className="w-[105px] text-center text-base text-[#7D7D7D]">
+                  <TableHead className="w-[115px] text-center text-base text-[#7D7D7D]">
                     Action
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {services.map((service) => (
-                  <TableRow key={service.id} className="h-[60px]">
-                    <TableCell className="pl-4">
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          role="img"
-                          aria-label={`${service.name} preview`}
-                          className="flex h-[30px] w-[38px] shrink-0 items-center justify-center rounded bg-[#D9EAE8] bg-cover bg-center text-xs font-semibold text-[#007066]"
-                          style={
-                            service.image
-                              ? { backgroundImage: `url("${service.image}")` }
-                              : undefined
-                          }
-                        >
-                          {!service.image ? service.name.charAt(0) : null}
-                        </span>
-                        <span className="whitespace-nowrap text-base font-semibold text-[#000000]">
-                          {service.name}
-                        </span>
-                      </div>
+                {projects.map((project) => (
+                  <TableRow key={project.id} className="h-[76px]">
+                    <TableCell className="text-center">
+                      <span className="text-base font-semibold text-[#000000]">
+                        {project.name}
+                      </span>
                     </TableCell>
-                    <TableCell className="max-w-[400px] text-center">
-                      <p className="mx-auto line-clamp-2 max-w-[360px] text-base leading-6 text-[#7D7D7D]">
-                        {service.description}
+                    <TableCell className="max-w-[385px] text-center">
+                      <p className="mx-auto line-clamp-2 max-w-[345px] text-base leading-6 text-[#7D7D7D]">
+                        {project.description}
                       </p>
                     </TableCell>
                     <TableCell className="text-center text-base font-medium text-[#7D7D7D]">
-                      {service.addedDate}
+                      {project.images}
+                    </TableCell>
+                    <TableCell className="text-center text-base font-medium text-[#7D7D7D]">
+                      {project.addedDate}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="inline-flex h-[24px] min-w-[58px] items-center justify-center rounded-full bg-[#CDF4D5] px-3 text-base font-medium text-[#7D7D7D]">
-                        {service.status}
+                      <span className="inline-flex h-[24px] min-w-[86px] items-center justify-center rounded-full bg-[#CDF4D5] px-4 text-base font-medium text-[#12B633]">
+                        {project.status}
                       </span>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-3 text-[#264B5B]">
                         <button
                           type="button"
-                          onClick={() => setServiceToEdit(service)}
+                          onClick={() => setProjectToView(project)}
+                          className="flex size-7 items-center justify-center rounded bg-[#D9EAE8] text-[#007066] transition hover:bg-[#007066] hover:text-white"
+                          aria-label={`View ${project.name}`}
+                        >
+                          <Eye className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProjectToEdit(project)}
                           className="rounded p-1 transition hover:bg-white/50 hover:text-[#007066]"
-                          aria-label={`Edit ${service.name}`}
+                          aria-label={`Edit ${project.name}`}
                         >
                           <PencilLine className="size-4" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => setServiceToDelete(service)}
+                          onClick={() => setProjectToDelete(project)}
                           className="rounded p-1 transition hover:bg-white/50 hover:text-red-600"
-                          aria-label={`Delete ${service.name}`}
+                          aria-label={`Delete ${project.name}`}
                         >
                           <Trash2 className="size-4" />
                         </button>
@@ -451,32 +465,42 @@ export function ServicesClient() {
         )}
       </motion.section>
 
-      <AddServiceModal
+      <AddProjectModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
       />
 
-      <EditServiceModal
-        open={Boolean(serviceToEdit)}
-        serviceId={serviceToEdit?.id ?? null}
+      <EditProjectModal
+        open={Boolean(projectToEdit)}
+        projectId={projectToEdit?.id ?? null}
         onOpenChange={(open) => {
           if (!open) {
-            setServiceToEdit(null)
+            setProjectToEdit(null)
           }
         }}
       />
 
-      <Dialog open={Boolean(serviceToDelete)} onOpenChange={closeDeleteModal}>
+      <ProjectDetailsModal
+        open={Boolean(projectToView)}
+        projectId={projectToView?.id ?? null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setProjectToView(null)
+          }
+        }}
+      />
+
+      <Dialog open={Boolean(projectToDelete)} onOpenChange={closeDeleteModal}>
         <DialogContent className="max-w-[430px]">
           <div className="px-6 pb-6 pt-6">
             <DialogHeader className="pr-8">
               <DialogTitle className="text-2xl font-medium text-[#000000]">
-                Delete Service
+                Delete Project
               </DialogTitle>
               <DialogDescription className="mt-2 text-base leading-6 text-[#667877]">
                 Are you sure you want to delete{" "}
                 <span className="font-semibold text-[#000000]">
-                  {serviceToDelete?.name}
+                  {projectToDelete?.name}
                 </span>
                 ? This action cannot be undone.
               </DialogDescription>
@@ -487,7 +511,7 @@ export function ServicesClient() {
                 type="button"
                 variant="outline"
                 disabled={isDeletePending}
-                onClick={() => setServiceToDelete(null)}
+                onClick={() => setProjectToDelete(null)}
                 className="h-[44px] min-w-[96px] border-[#007066] bg-transparent text-base font-medium text-[#007066] hover:bg-[#E6F1F0]"
               >
                 Cancel
@@ -495,7 +519,7 @@ export function ServicesClient() {
               <Button
                 type="button"
                 disabled={isDeletePending}
-                onClick={confirmDeleteService}
+                onClick={confirmDeleteProject}
                 className="h-[44px] min-w-[112px] bg-red-600 text-base font-medium text-white hover:bg-red-700"
               >
                 {isDeletePending ? "Deleting..." : "Delete"}

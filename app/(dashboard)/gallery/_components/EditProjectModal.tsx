@@ -146,6 +146,85 @@ async function updateProject(
   }
 }
 
+async function addProjectImages(
+  accessToken: string,
+  projectId: string,
+  images: SelectedProjectImage[],
+) {
+  const formData = new FormData()
+
+  images.forEach((image) => {
+    formData.append("image", image.file)
+  })
+
+  const response = await fetch(
+    `${getApiBaseUrl()}/project/${encodeURIComponent(projectId)}/add-image`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+      cache: "no-store",
+    },
+  )
+
+  const payload: UpdateProjectResponse | null = await response
+    .json()
+    .catch(() => null)
+  const hasExplicitFailure =
+    payload?.success === false || payload?.status === false
+
+  if (!response.ok || hasExplicitFailure) {
+    throw new Error(
+      payload?.message?.trim() ||
+        "Project images could not be added. Please try again.",
+    )
+  }
+
+  return {
+    message: payload?.message?.trim() || "Project images added successfully.",
+  }
+}
+
+async function removeProjectImage(
+  accessToken: string,
+  projectId: string,
+  image: string,
+) {
+  const response = await fetch(
+    `${getApiBaseUrl()}/project/${encodeURIComponent(projectId)}/remove-image`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ image }),
+      cache: "no-store",
+    },
+  )
+
+  const payload: UpdateProjectResponse | null = await response
+    .json()
+    .catch(() => null)
+  const hasExplicitFailure =
+    payload?.success === false || payload?.status === false
+
+  if (!response.ok || hasExplicitFailure) {
+    throw new Error(
+      payload?.message?.trim() ||
+        "Project image could not be removed. Please try again.",
+    )
+  }
+
+  return {
+    message: payload?.message?.trim() || "Project image removed successfully.",
+  }
+}
+
 function EditProjectModalSkeleton() {
   return (
     <div className="animate-pulse space-y-3 px-6 pb-6 pt-6">
@@ -228,6 +307,7 @@ export function EditProjectModal({
   const [selectedImages, setSelectedImages] = useState<SelectedProjectImage[]>(
     [],
   )
+  const [removingImages, setRemovingImages] = useState<string[]>([])
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const accessToken = session?.accessToken
@@ -260,6 +340,7 @@ export function EditProjectModal({
     setName("")
     setDescription("")
     setCurrentImages([])
+    setRemovingImages([])
     clearSelectedImages()
   }
 
@@ -296,12 +377,24 @@ export function EditProjectModal({
   }, [open, projectDetailsQuery.data])
 
   const updateProjectMutation = useMutation({
-    mutationFn: (formData: FormData) => {
+    mutationFn: async ({
+      formData,
+      images,
+    }: {
+      formData: FormData
+      images: SelectedProjectImage[]
+    }) => {
       if (!accessToken || !projectId) {
         throw new Error("Your session token was not found. Please log in again.")
       }
 
-      return updateProject(accessToken, projectId, formData)
+      const result = await updateProject(accessToken, projectId, formData)
+
+      if (images.length > 0) {
+        await addProjectImages(accessToken, projectId, images)
+      }
+
+      return result
     },
     onSuccess: async (result) => {
       toast.success(result.message)
@@ -321,7 +414,34 @@ export function EditProjectModal({
     },
   })
 
-  const isSubmitting = updateProjectMutation.isPending
+  const removeProjectImageMutation = useMutation({
+    mutationFn: (image: string) => {
+      if (!accessToken || !projectId) {
+        throw new Error("Your session token was not found. Please log in again.")
+      }
+
+      return removeProjectImage(accessToken, projectId, image)
+    },
+    onSuccess: async (result, image) => {
+      toast.success(result.message)
+      queryClient.setQueryData<ProjectDetails | undefined>(
+        ["project", projectId],
+        (project) =>
+          project
+            ? {
+                ...project,
+                image: normalizeImages(project.image).filter(
+                  (currentImage) => currentImage !== image,
+                ),
+              }
+            : project,
+      )
+      await queryClient.invalidateQueries({ queryKey: ["projects"] })
+    },
+  })
+
+  const isSubmitting =
+    updateProjectMutation.isPending || removeProjectImageMutation.isPending
   const isLoading =
     projectDetailsQuery.isLoading || projectDetailsQuery.isFetching
 
@@ -382,6 +502,37 @@ export function EditProjectModal({
     })
   }
 
+  const removeCurrentImage = async (image: string) => {
+    if (removingImages.includes(image)) {
+      return
+    }
+
+    const previousImages = currentImages
+
+    setRemovingImages((currentRemovingImages) => [
+      ...currentRemovingImages,
+      image,
+    ])
+    setCurrentImages((currentProjectImages) =>
+      currentProjectImages.filter((currentImage) => currentImage !== image),
+    )
+
+    try {
+      await removeProjectImageMutation.mutateAsync(image)
+    } catch (error) {
+      setCurrentImages(previousImages)
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Project image could not be removed. Please try again.",
+      )
+    } finally {
+      setRemovingImages((currentRemovingImages) =>
+        currentRemovingImages.filter((currentImage) => currentImage !== image),
+      )
+    }
+  }
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -395,19 +546,14 @@ export function EditProjectModal({
       return
     }
 
-    if (currentImages.length === 0 && selectedImages.length === 0) {
-      toast.error("Please select at least one project image.")
-      return
-    }
-
     const formData = new FormData()
     formData.append("name", name.trim())
     formData.append("description", description.trim())
-    selectedImages.forEach((image) => {
-      formData.append("image", image.file)
-    })
 
-    updateProjectMutation.mutate(formData)
+    updateProjectMutation.mutate({
+      formData,
+      images: selectedImages,
+    })
   }
 
   return (
@@ -493,11 +639,24 @@ export function EditProjectModal({
                         {currentImages.map((image, index) => (
                           <div
                             key={`${image}-${index}`}
-                            role="img"
-                            aria-label={`Current project image ${index + 1}`}
-                            className="h-[150px] rounded border border-[#CADBD9] bg-[#F6FEFD] bg-cover bg-center"
-                            style={{ backgroundImage: `url("${image}")` }}
-                          />
+                            className="relative h-[150px] overflow-hidden rounded border border-[#CADBD9] bg-[#F6FEFD]"
+                          >
+                            <div
+                              role="img"
+                              aria-label={`Current project image ${index + 1}`}
+                              className="h-full w-full bg-cover bg-center"
+                              style={{ backgroundImage: `url("${image}")` }}
+                            />
+                            <button
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => void removeCurrentImage(image)}
+                              className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-white text-[#111827] shadow-md transition hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-60"
+                              aria-label={`Remove current project image ${index + 1}`}
+                            >
+                              <X className="size-4" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </div>

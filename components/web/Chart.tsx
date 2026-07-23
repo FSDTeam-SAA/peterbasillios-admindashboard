@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
@@ -248,6 +248,7 @@ function extractChartSource(source: unknown): unknown {
 
   const sourceKeys = [
     'data',
+    'chartData',
     'chart',
     'charts',
     'inquiries',
@@ -360,6 +361,10 @@ function getYearOptions(currentYear: number) {
   return Array.from({ length: 4 }, (_, index) => currentYear - 3 + index);
 }
 
+function getCurrentYear() {
+  return new Date().getFullYear();
+}
+
 function getNiceStep(maxValue: number) {
   if (maxValue <= 5) {
     return 1;
@@ -405,20 +410,62 @@ function getYAxisTicks(maxValue: number) {
 function InquiriesChartSkeleton() {
   return (
     <div className="h-[475px] w-full animate-pulse rounded-lg">
-      <div className="flex h-full items-end gap-3 border-t border-[#D5E4E2] pt-5">
-        {monthLabels.map((month, index) => (
-          <div key={month} className="flex h-full flex-1 items-end">
+      <div className="flex h-full">
+        <div className="flex w-9 shrink-0 flex-col justify-between pb-9 pt-3">
+          {Array.from({ length: 6 }).map((_, index) => (
             <div
-              className="w-full rounded-t bg-[#D9EAE8]"
-              style={{ height: `${28 + ((index * 17) % 56)}%` }}
+              key={index}
+              className="h-2 w-5 rounded bg-[#C6DEDB]"
             />
+          ))}
+        </div>
+
+        <div className="relative h-full flex-1 pb-9 pt-3">
+          <div className="absolute inset-x-0 bottom-9 top-3 flex flex-col justify-between">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-px bg-[#D5E4E2]" />
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="mt-3 grid grid-cols-12 gap-3">
-        {monthLabels.map((month) => (
-          <div key={month} className="h-2 rounded bg-[#C6DEDB]" />
-        ))}
+
+          <div className="absolute inset-x-0 bottom-9 top-3">
+            <svg
+              viewBox="0 0 1000 360"
+              preserveAspectRatio="none"
+              className="h-full w-full"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient
+                  id="inquiriesSkeletonFill"
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2="1"
+                >
+                  <stop offset="0%" stopColor="#8CCAC9" stopOpacity="0.24" />
+                  <stop offset="100%" stopColor="#8CCAC9" stopOpacity="0.08" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M0 275 C80 250 135 260 210 220 C285 180 360 210 440 160 C520 110 600 120 675 150 C750 180 835 130 1000 95 L1000 360 L0 360 Z"
+                fill="url(#inquiriesSkeletonFill)"
+              />
+              <path
+                d="M0 275 C80 250 135 260 210 220 C285 180 360 210 440 160 C520 110 600 120 675 150 C750 180 835 130 1000 95"
+                fill="none"
+                stroke="#8CCAC9"
+                strokeWidth="7"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+
+          <div className="absolute bottom-0 left-0 right-0 grid grid-cols-12 gap-1.5">
+            {monthLabels.map((month) => (
+              <div key={month} className="mx-auto h-2 w-5 rounded bg-[#C6DEDB]" />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -448,11 +495,34 @@ function ChartState({
 }
 
 export function InquiriesChart() {
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
-  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [currentYear, setCurrentYear] = useState(getCurrentYear);
+  const [selectedYear, setSelectedYear] = useState(getCurrentYear);
   const yearOptions = useMemo(() => getYearOptions(currentYear), [currentYear]);
   const { data: session, status } = useSession();
   const accessToken = session?.accessToken;
+
+  useEffect(() => {
+    const syncCurrentYear = () => {
+      const nextYear = getCurrentYear();
+
+      setCurrentYear((previousYear) => {
+        if (previousYear === nextYear) {
+          return previousYear;
+        }
+
+        setSelectedYear((previousSelectedYear) =>
+          previousSelectedYear === previousYear ? nextYear : previousSelectedYear,
+        );
+
+        return nextYear;
+      });
+    };
+
+    syncCurrentYear();
+    const intervalId = window.setInterval(syncCurrentYear, 60 * 60 * 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const chartQuery = useQuery({
     queryKey: ['dashboard-inquiry-chart', selectedYear],

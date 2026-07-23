@@ -107,6 +107,17 @@ function normalizeStatus(status?: string) {
   return status.trim()
 }
 
+function stripRichText(value?: string) {
+  const plainText =
+    value
+      ?.replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() ?? ""
+
+  return plainText || "No description available."
+}
+
 function normalizeServices(data?: ServiceApiItem[]): ServiceItem[] {
   if (!Array.isArray(data)) {
     return []
@@ -115,7 +126,7 @@ function normalizeServices(data?: ServiceApiItem[]): ServiceItem[] {
   return data.map((service) => ({
     id: service._id,
     name: service.name?.trim() || "Untitled service",
-    description: service.description?.trim() || "No description available.",
+    description: stripRichText(service.description),
     image: service.image,
     addedDate: formatAddedDate(service.createdAt),
     status: normalizeStatus(service.status),

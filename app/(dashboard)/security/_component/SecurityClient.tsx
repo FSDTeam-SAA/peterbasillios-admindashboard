@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import { Camera, Check, Eye, EyeOff, X } from "lucide-react"
+import { Check, Eye, EyeOff, X } from "lucide-react"
 import { useSession } from "next-auth/react"
 import { toast } from "sonner"
 
@@ -11,23 +11,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
 
-const profileImage = `data:image/svg+xml;utf8,${encodeURIComponent(`
-  <svg width="140" height="140" viewBox="0 0 140 140" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="140" height="140" rx="70" fill="#C8E8E5"/>
-    <rect x="23" y="78" width="94" height="70" rx="30" fill="#101827"/>
-    <circle cx="70" cy="59" r="31" fill="#D9A066"/>
-    <path d="M36 53C41 31 57 18 81 21C101 24 111 38 111 55C96 50 82 42 72 31C63 45 49 52 36 53Z" fill="#2D1818"/>
-    <path d="M39 50C46 31 62 20 84 23C99 25 108 37 110 52C93 49 79 40 72 30C63 43 52 49 39 50Z" fill="#5B1D28"/>
-    <path d="M48 40C58 29 74 24 90 30" stroke="#F5D7B7" stroke-width="5" stroke-linecap="round"/>
-    <circle cx="59" cy="60" r="3" fill="#1D2430"/>
-    <circle cx="82" cy="60" r="3" fill="#1D2430"/>
-    <path d="M60 78C66 83 75 83 82 78" stroke="#7E3A2E" stroke-width="4" stroke-linecap="round"/>
-    <rect x="48" y="93" width="45" height="40" rx="12" fill="#007066"/>
-    <path d="M32 122C42 105 55 97 70 97C85 97 98 105 108 122V140H32V122Z" fill="#0C1D2E"/>
-  </svg>
-`)}`
+import { PersonalInfoPanel } from "./PersonalInfoPanel"
 
 const passwordRuleDefinitions = [
   {
@@ -130,120 +115,6 @@ export function SecurityClient() {
         <PasswordChangePanel />
       </TabsContent>
     </Tabs>
-  )
-}
-
-function PersonalInfoPanel() {
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="grid gap-6 lg:grid-cols-[400px_1fr]"
-    >
-      <aside className="overflow-hidden rounded bg-[#E6F1F0]">
-        <div className="h-[172px] bg-[#2D9286]" />
-        <div className="px-5 pb-6 text-center">
-          <div className="relative mx-auto -mt-[72px] size-[118px] rounded-full border-4 border-white bg-cover bg-center shadow-md" style={{ backgroundImage: `url("${profileImage}")` }}>
-            <button
-              type="button"
-              className="absolute bottom-1 right-1 flex size-8 items-center justify-center rounded-full bg-[#007066] text-white shadow-md"
-              aria-label="Change profile image"
-            >
-              <Camera className="size-4" />
-            </button>
-          </div>
-
-          <h2 className="mt-5 text-2xl font-semibold text-[#000000]">
-            Welly Wilson
-          </h2>
-          <p className="text-base text-[#000000]">example@example.com</p>
-
-          <div className="mt-6 space-y-4 text-left text-base leading-6 text-[#000000]">
-            <p>
-              <span className="font-semibold">Name:</span> Jenny Wilson
-            </p>
-            <p>
-              <span className="font-semibold">Bio:</span> Dedicated natural
-              health advocate committed to empowering people with safe,
-              holistic, and evidence-based wellness guidance. Focused on
-              building meaningful digital experiences that make naturopathic
-              knowledge accessible to everyone worldwide.
-            </p>
-            <p>
-              <span className="font-semibold">Email:</span> example@example.com
-            </p>
-            <p>
-              <span className="font-semibold">Phone:</span> +1 (725) 890-4421
-            </p>
-            <p>
-              <span className="font-semibold">Location:</span> 87 Meadowbrook
-              Drive, Austin, TX 78703
-            </p>
-          </div>
-        </div>
-      </aside>
-
-      <form className="rounded bg-[#E6F1F0] p-5">
-        <div className="grid gap-5 md:grid-cols-2">
-          <Field label="First Name" id="first-name">
-            <Input id="first-name" defaultValue="Welly" className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]" />
-          </Field>
-          <Field label="Last Name" id="last-name">
-            <Input id="last-name" defaultValue="Wilson" className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]" />
-          </Field>
-          <Field label="Email Address" id="email">
-            <Input id="email" defaultValue="example@example.com" className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]" />
-          </Field>
-          <Field label="Phone Number" id="phone">
-            <Input id="phone" defaultValue="+1 (555) 123-4567" className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]" />
-          </Field>
-        </div>
-
-        <div className="mt-5 flex items-center gap-4 text-base text-[#000000]">
-          <label className="flex items-center gap-2">
-            Male
-            <input
-              type="radio"
-              name="gender"
-              defaultChecked
-              className="size-4 accent-[#000C5C]"
-            />
-          </label>
-          <label className="flex items-center gap-2">
-            Female
-            <input type="radio" name="gender" className="size-4 accent-[#000C5C]" />
-          </label>
-        </div>
-
-        <Field label="Bio" id="bio" className="mt-5">
-          <Textarea
-            id="bio"
-            defaultValue="Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi et ante sed sem feugiat tristique at sed mauris. Phasellus urna magna, cursus at mi eu, dapibus porta nisi."
-            className="h-[92px] border-[#C3C3C3] text-base leading-6 text-[#7D7D7D]"
-          />
-        </Field>
-
-        <Field label="Street Address" id="street-address" className="mt-5">
-          <Input
-            id="street-address"
-            defaultValue="1234 Oak Avenue, San Francisco, CA 94102A"
-            className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]"
-          />
-        </Field>
-
-        <div className="mt-5 grid gap-5 md:grid-cols-2">
-          <Field label="Location" id="location">
-            <Input id="location" defaultValue="Florida, USA" className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]" />
-          </Field>
-          <Field label="Postal Code" id="postal-code">
-            <Input id="postal-code" defaultValue="30301" className="h-[44px] border-[#C3C3C3] text-base text-[#7D7D7D]" />
-          </Field>
-        </div>
-
-        <FormActions />
-      </form>
-    </motion.section>
   )
 }
 
@@ -457,27 +328,6 @@ function PasswordChangePanel() {
         saveLabel={isSaving ? "Saving..." : "Save"}
       />
     </motion.form>
-  )
-}
-
-function Field({
-  label,
-  id,
-  className,
-  children,
-}: {
-  label: string
-  id: string
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className={className}>
-      <Label htmlFor={id} className="mb-2 block text-base font-medium text-[#000000]">
-        {label}
-      </Label>
-      {children}
-    </div>
   )
 }
 

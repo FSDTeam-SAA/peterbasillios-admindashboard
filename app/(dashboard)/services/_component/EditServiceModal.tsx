@@ -17,7 +17,11 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+
+import {
+  isRichTextEmpty,
+  ServiceDescriptionEditor,
+} from "./ServiceDescriptionEditor"
 
 interface EditServiceModalProps {
   open: boolean
@@ -133,7 +137,7 @@ function EditServiceModalSkeleton() {
       </div>
       <div className="space-y-1.5">
         <div className="h-5 w-28 rounded bg-[#D9EAE8]" />
-        <div className="h-[154px] rounded border border-[#C3C3C3] bg-[#F6FEFD]" />
+        <div className="h-[197px] rounded border border-[#C3C3C3] bg-[#F6FEFD]" />
       </div>
       <div className="space-y-1.5">
         <div className="h-5 w-20 rounded bg-[#D9EAE8]" />
@@ -334,7 +338,7 @@ export function EditServiceModal({
       return
     }
 
-    if (!description.trim()) {
+    if (isRichTextEmpty(description)) {
       toast.error("Service description is required.")
       return
     }
@@ -409,14 +413,12 @@ export function EditServiceModal({
                 >
                   Description
                 </Label>
-                <Textarea
+                <ServiceDescriptionEditor
                   id="edit-service-description"
-                  name="description"
                   value={description}
                   disabled={isSubmitting}
-                  onChange={(event) => setDescription(event.target.value)}
+                  onChange={setDescription}
                   placeholder="Describe this service...."
-                  className="h-[154px] border-[#C3C3C3] text-base"
                 />
               </div>
 

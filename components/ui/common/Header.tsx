@@ -1,13 +1,20 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Bell } from "lucide-react";
 
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
+import {
+  fetchUserProfile,
+  getUserInitials,
+  getUserProfileImage,
+  userProfileQueryKey,
+} from "@/lib/user-profile";
 
 const headerContent: Record<string, { title: string; description: string }> = {
   "/": {
@@ -50,7 +57,29 @@ function getHeaderContent(pathname: string) {
 
 export default function Header() {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const { title, description } = getHeaderContent(pathname);
+  const accessToken = session?.accessToken;
+
+  const profileQuery = useQuery({
+    queryKey: userProfileQueryKey,
+    queryFn: () => fetchUserProfile(accessToken as string),
+    enabled: Boolean(accessToken),
+    retry: 1,
+    staleTime: 30_000,
+  });
+
+  const profile = profileQuery.data;
+  const fallbackName =
+    profile?.fullName?.trim() ||
+    session?.user?.name?.trim() ||
+    session?.user?.email?.trim() ||
+    "Admin";
+  const avatarSrc =
+    getUserProfileImage(profile) ||
+    session?.user?.profileImage?.trim() ||
+    session?.user?.image?.trim() ||
+    "";
 
   return (
     <header className="fixed left-0 right-0 top-0 z-50 flex h-[80px] items-center justify-between gap-4 border-b border-[#D7E7E5] bg-[#E6F1F0] px-6 lg:left-[300px]">
@@ -64,17 +93,11 @@ export default function Header() {
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
-        <button
-          type="button"
-          className="flex size-11 items-center justify-center rounded-full bg-white text-[#000000] shadow-sm transition hover:bg-[#F4FAFA]"
-          aria-label="Notifications"
-        >
-          <Bell className="size-5" />
-        </button>
-
         <Avatar className="size-11 border-2 border-white shadow-sm">
-          <AvatarImage src="/profile.png" alt="Profile image" />
-          <AvatarFallback>WT</AvatarFallback>
+          {avatarSrc ? (
+            <AvatarImage src={avatarSrc} alt={`${fallbackName} profile image`} />
+          ) : null}
+          <AvatarFallback>{getUserInitials(fallbackName)}</AvatarFallback>
         </Avatar>
       </div>
     </header>
